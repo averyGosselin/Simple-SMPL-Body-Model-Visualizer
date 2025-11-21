@@ -641,10 +641,6 @@ class AppWindow:
         grid.add_child(self._body_beta_val)
         self.model_settings.add_child(grid)
 
-        # h = gui.Horiz(0.25 * em)  # row 1
-        # h.add_child(self._body_beta_text)
-        # self.model_settings.add_child(h)
-
         h = gui.Horiz(0.25 * em)  # row 2
         h.add_child(self._body_beta_reset)
         self.model_settings.add_child(h)
@@ -1567,31 +1563,21 @@ class SMPLStreamingVisualizer:
         self._stop_event = threading.Event()
         self._sine_thread = None
 
+        # can add more joints here as needed
         self._ls_idx = AppWindow.JOINT_NAMES['SMPL']['body_pose'].index('left_shoulder')
         self._le_idx = AppWindow.JOINT_NAMES['SMPL']['body_pose'].index('left_elbow')
 
-    # def update_body_pose(self, shoulder_x_deg: float, elbow_x_deg: float):
     def update_body_pose(self, shoulder_xyz_deg: list, elbow_xyz_deg: list):
-        """Update only left shoulder/elbow (x-axis) angles; extend as needed."""
+        """Updates only left shoulder/elbow angles; extend as needed."""
         def _apply():
             AppWindow.POSE_PARAMS['SMPL']['body_pose'] = torch.zeros_like(AppWindow.POSE_PARAMS['SMPL']['body_pose'])
 
-            # shoulder_x_deg = shoulder_xyz_deg[0]
-            # shoulder_y_deg = shoulder_xyz_deg[1]
-            # shoulder_z_deg = shoulder_xyz_deg[2]
             shoulder_vec = R.Rotation.from_euler('xyz', shoulder_xyz_deg, degrees=True).as_rotvec()
-
-            # elbow_x_deg = elbow_xyz_deg[0]
-            # elbow_y_deg = elbow_xyz_deg[1]
-            # elbow_z_deg = elbow_xyz_deg[2]
             elbow_vec = R.Rotation.from_euler('xyz', elbow_xyz_deg, degrees=True).as_rotvec()
 
-
-            # elbow_x_deg = elbow_xyx_deg[0]
-
-            # elbow_vec = R.Rotation.from_euler('x', elbow_x_deg, degrees=True).as_rotvec()
             AppWindow.POSE_PARAMS['SMPL']['body_pose'][0, self._ls_idx] = torch.from_numpy(shoulder_vec)
             AppWindow.POSE_PARAMS['SMPL']['body_pose'][0, self._le_idx] = torch.from_numpy(elbow_vec)
+            
             self.window.load_body_model(self.window._body_model.selected_text, gender=self.window._body_model_gender.selected_text)
 
         gui.Application.instance.post_to_main_thread(self.window.window, _apply)
