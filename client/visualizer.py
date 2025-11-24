@@ -4,8 +4,9 @@ from utils.vis_tools import SMPLStreamingVisualizer
 
 HOST = "127.0.0.1"
 PORT = 5001
+SIDE = "right"  # "left" or "right"
 
-viz = SMPLStreamingVisualizer(width=1280, height=720)
+viz = SMPLStreamingVisualizer(width=1280, height=720, side=SIDE)
 
 def main():
     # Connect to the angle-streaming server and update the SMPL visualizer

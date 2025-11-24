@@ -1553,19 +1553,24 @@ class SMPLStreamingVisualizer:
 
     _initialized = False
 
-    def __init__(self, width=1280, height=720):
+    def __init__(self, width=1280, height=720, side="right"):
         self.app = gui.Application.instance
         if not SMPLStreamingVisualizer._initialized:
             self.app.initialize()
             SMPLStreamingVisualizer._initialized = True
 
         self.window = AppWindow(width, height)
+
+        if side != "left" and side != "right":
+            print("Warning, invalid side for SMPLStreamingVisualizer, defaulting to 'right'")
+            side = "right"
+
+        self.side = side
         self._stop_event = threading.Event()
         self._sine_thread = None
 
-        # can add more joints here as needed
-        self._ls_idx = AppWindow.JOINT_NAMES['SMPL']['body_pose'].index('left_shoulder')
-        self._le_idx = AppWindow.JOINT_NAMES['SMPL']['body_pose'].index('left_elbow')
+        self._shoulder_idx = AppWindow.JOINT_NAMES['SMPL']['body_pose'].index(f'{self.side}_shoulder')
+        self._elbow_idx = AppWindow.JOINT_NAMES['SMPL']['body_pose'].index(f'{self.side}_elbow')
 
     def update_body_pose(self, shoulder_xyz_deg: list, elbow_xyz_deg: list):
         """Updates only left shoulder/elbow angles; extend as needed."""
@@ -1575,8 +1580,8 @@ class SMPLStreamingVisualizer:
             shoulder_vec = R.Rotation.from_euler('xyz', shoulder_xyz_deg, degrees=True).as_rotvec()
             elbow_vec = R.Rotation.from_euler('xyz', elbow_xyz_deg, degrees=True).as_rotvec()
 
-            AppWindow.POSE_PARAMS['SMPL']['body_pose'][0, self._ls_idx] = torch.from_numpy(shoulder_vec)
-            AppWindow.POSE_PARAMS['SMPL']['body_pose'][0, self._le_idx] = torch.from_numpy(elbow_vec)
+            AppWindow.POSE_PARAMS['SMPL']['body_pose'][0, self._shoulder_idx] = torch.from_numpy(shoulder_vec)
+            AppWindow.POSE_PARAMS['SMPL']['body_pose'][0, self._elbow_idx] = torch.from_numpy(elbow_vec)
             
             self.window.load_body_model(self.window._body_model.selected_text, gender=self.window._body_model_gender.selected_text)
 
