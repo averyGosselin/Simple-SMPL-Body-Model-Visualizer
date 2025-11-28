@@ -29,7 +29,7 @@ smpl_joint_names = [
     'left_wrist',
     'right_wrist',
     'left_index1',
-    'righ_index1',
+    'right_index1',
 ]
 
 

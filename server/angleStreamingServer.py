@@ -32,6 +32,7 @@ class AngleStreamingServer:
 
     def __init__(self, host: str = "127.0.0.1", port: int = 5001, send_interval: float = 0.05):
         self.host = host
+
         self.port = port
         self.send_interval = send_interval
 
@@ -132,16 +133,25 @@ class AngleStreamingServer:
 
 
 # --- Demo usage when run as a script ---
-def _random_angle_producer(server: AngleStreamingServer, update_interval: float = 1) -> None:
+def _random_angle_producer(server: AngleStreamingServer, update_interval: float = .01) -> None:
     """
     Demo producer: generates random angles and pushes them into the server.
 
     This is only used when running this file directly, not when importing.
     """
     try:
+        val = 0
+        toadd = 5
         while True:
-            shoulder = [random.uniform(-45.0, 45.0) for _ in range(3)]
-            elbow = [random.uniform(-90.0, 0.0) for _ in range(3)]
+            # shoulder = [random.uniform(-45.0, 45.0) for _ in range(3)]
+            shoulder = [0,0,0]
+            
+            if val >= 90:
+                toadd *= -1
+
+            val += toadd
+            # elbow = [random.uniform(-90.0, 0.0) for _ in range(3)]
+            elbow = [0,val,0]
             server.update_angles(shoulder, elbow)
             time.sleep(update_interval)
     except KeyboardInterrupt:
@@ -156,3 +166,5 @@ def demo():
 
     print("[server] AngleStreamingServer started; generating random demo angles...")
     _random_angle_producer(server)
+
+demo()
