@@ -184,7 +184,7 @@ class Settings:
     def __init__(self):
         self.mouse_model = gui.SceneWidget.Controls.ROTATE_CAMERA
         self.bg_color = gui.Color(1, 1, 1)
-        self.show_skybox = False
+        self.show_skybox = True
         self.show_axes = True
         self.show_ground = True
         self.use_ibl = True
@@ -464,11 +464,30 @@ class AppWindow:
         advanced.add_child(h)
 
         self._ibl_map = gui.Combobox()
-        for ibl in glob.glob(gui.Application.instance.resource_path +
-                             "/*_ibl.ktx"):
-
-            self._ibl_map.add_item(os.path.basename(ibl[:-8]))
-        self._ibl_map.selected_text = AppWindow.DEFAULT_IBL
+        self._ibl_paths = {}
+        env_dir = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "data",
+                         "environment-assets"))
+        if os.path.isdir(env_dir):
+            for ibl in sorted(glob.glob(os.path.join(env_dir, "*_ibl.ktx"))):
+                base_path = ibl[:-len("_ibl.ktx")]
+                name = os.path.basename(base_path)
+                self._ibl_map.add_item(name)
+                self._ibl_paths[name] = base_path
+        # Fallback to bundled Open3D environments if none are found in the
+        # local assets directory.
+        if not self._ibl_paths:
+            resource_path = gui.Application.instance.resource_path
+            for ibl in sorted(glob.glob(resource_path + "/*_ibl.ktx")):
+                base_path = ibl[:-len("_ibl.ktx")]
+                name = os.path.basename(base_path)
+                self._ibl_map.add_item(name)
+                self._ibl_paths[name] = base_path
+        if self._ibl_paths:
+            # Pick the first available environment as the default selection.
+            first_env = sorted(self._ibl_paths.keys())[0]
+            self._ibl_map.selected_text = first_env
+            self.settings.new_ibl_name = self._ibl_paths[first_env]
         self._ibl_map.set_on_selection_changed(self._on_new_ibl)
         self._ibl_intensity = gui.Slider(gui.Slider.INT)
         self._ibl_intensity.set_limits(0, 200000)
@@ -967,7 +986,14 @@ class AppWindow:
             self._apply_settings()
 
     def _on_new_ibl(self, name, index):
-        self.settings.new_ibl_name = gui.Application.instance.resource_path + "/" + name
+        ibl_path = self._ibl_paths.get(name)
+        if ibl_path is None:
+            logger.warning(f"Unknown IBL selection: {name}")
+            return
+        # Ensure the HDR map is also used as the visible background.
+        self.settings.show_skybox = True
+        self.settings.new_ibl_name = ibl_path
+
         self._profiles.selected_text = Settings.CUSTOM_PROFILE_NAME
         self._apply_settings()
 
@@ -1547,50 +1573,3 @@ class AppWindow:
 
         self._scene.scene.scene.render_to_image(on_image)
 
-
-class SMPLStreamingVisualizer:
-    """Small wrapper to run the SMPL viewer and feed poses from another thread."""
-
-    _initialized = False
-
-    def __init__(self, width=1280, height=720, side="right"):
-        self.app = gui.Application.instance
-        if not SMPLStreamingVisualizer._initialized:
-            self.app.initialize()
-            SMPLStreamingVisualizer._initialized = True
-
-        self.window = AppWindow(width, height)
-
-        if side != "left" and side != "right":
-            print("Warning, invalid side for SMPLStreamingVisualizer, defaulting to 'right'")
-            side = "right"
-
-        self.side = side
-        self._stop_event = threading.Event()
-        self._sine_thread = None
-
-        self._shoulder_idx = AppWindow.JOINT_NAMES['SMPL']['body_pose'].index(f'{self.side}_shoulder')
-        self._elbow_idx = AppWindow.JOINT_NAMES['SMPL']['body_pose'].index(f'{self.side}_elbow')
-
-    def update_body_pose(self, shoulder_xyz_deg: list, elbow_xyz_deg: list):
-        """Updates only left shoulder/elbow angles; extend as needed."""
-        def _apply():
-            AppWindow.POSE_PARAMS['SMPL']['body_pose'] = torch.zeros_like(AppWindow.POSE_PARAMS['SMPL']['body_pose'])
-
-            shoulder_vec = R.Rotation.from_euler('xyz', shoulder_xyz_deg, degrees=True).as_rotvec()
-            elbow_vec = R.Rotation.from_euler('xyz', elbow_xyz_deg, degrees=True).as_rotvec()
-
-            AppWindow.POSE_PARAMS['SMPL']['body_pose'][0, self._shoulder_idx] = torch.from_numpy(shoulder_vec)
-            AppWindow.POSE_PARAMS['SMPL']['body_pose'][0, self._elbow_idx] = torch.from_numpy(elbow_vec)
-            
-            self.window.load_body_model(self.window._body_model.selected_text, gender=self.window._body_model_gender.selected_text)
-
-        gui.Application.instance.post_to_main_thread(self.window.window, _apply)
-
-    def run(self):
-        """Blocking run loop; closes when window is closed."""
-        self.app.run()
-
-    def close(self):
-        self.stop_sine_demo()
-        self.window.window.close()

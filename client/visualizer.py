@@ -1,64 +1,86 @@
 import socket
 import threading
-from utils.vis_tools import SMPLStreamingVisualizer
+import time
+
+from loguru import logger
+
+from utils.smpl_straming_visualizer import SMPLStreamingVisualizer
 
 HOST = "127.0.0.1"
 PORT = 5001
-SIDE = "right"  # "left" or "right"
 
-viz = SMPLStreamingVisualizer(width=1280, height=720, side=SIDE)
+viz = SMPLStreamingVisualizer(width=1280, height=720)
+
+
+def _parse_angles(line: str):
+    """
+    Parse joints and angles from generalized format: t (time),jointKey:x:y:z[,jointKey:x:y:z...]
+    Returns (t, joint_updates_dict).
+    """
+    parts = line.split(",")
+    if len(parts) < 2:
+        raise ValueError("Too few fields")
+
+    t = float(parts[0])
+
+    updates = {}
+    for entry in parts[1:]:
+        tokens = entry.split(":")
+        if len(tokens) != 4:
+            # Skip malformed tokens to keep the stream alive
+            logger.info(f"Skipping malformed joint token: {entry!r}")
+            continue
+        joint_key, x_str, y_str, z_str = tokens
+        try:
+            updates[joint_key] = [float(x_str), float(y_str), float(z_str)]
+        except ValueError:
+            logger.info(f"Non-numeric angles in token: {entry!r}")
+            continue
+
+    if not updates:
+        raise ValueError("No valid joint updates parsed")
+
+    return t, updates
+
 
 def main():
     # Connect to the angle-streaming server and update the SMPL visualizer
-    shoulderXYZ = [0.0, 0.0, 0.0]
-    elbowXYZ = [0.0, 0.0, 0.0]
+    while True:
+        try:
+            with socket.create_connection((HOST, PORT)) as sock:
+                logger.info(f"Connected to {HOST}:{PORT}")
 
-    with socket.create_connection((HOST, PORT)) as sock:
-        print(f"[visualizer] Connected to {HOST}:{PORT}")
-
-        # Wrap the socket in a file-like object so we can read line by line
-        with sock.makefile("r", encoding="utf-8") as f:
-            try:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-
-                    # Expecting "t,sx,sy,sz,ex,ey,ez"
+                # Wrap the socket in a file-like object so we can read line by line
+                with sock.makefile("r", encoding="utf-8") as f:
                     try:
-                        parts = line.split(",")
-                        if len(parts) != 7:
-                            raise ValueError(f"Expected 7 fields, got {len(parts)}")
+                        for line in f:
+                            line = line.strip()
+                            if not line:
+                                continue
 
-                        t_str, sx_str, sy_str, sz_str, ex_str, ey_str, ez_str = parts
-                        t = float(t_str)
+                            try:
+                                t, joint_updates = _parse_angles(line)
+                                viz.update_body_pose(joint_updates)
+                                pretty_updates = "; ".join(
+                                    f"{k}: {v}" for k, v in joint_updates.items()
+                                )
+                                logger.info(f"t={t:.3f}, joints=({pretty_updates})")
+                            except ValueError as e:
+                                logger.error(f"[visualizer]: {line} ({e})")
+                    except KeyboardInterrupt:
+                        logger.info("Interrupted by user; closing connection")
 
-                        shoulderXYZ[0] = float(sx_str)
-                        shoulderXYZ[1] = float(sy_str)
-                        shoulderXYZ[2] = float(sz_str)
+        except ConnectionRefusedError as e:
+            logger.error(f"Connection refused: {e}; retrying in 5 seconds...")
+            time.sleep(5)
 
-                        elbowXYZ[0] = float(ex_str)
-                        elbowXYZ[1] = float(ey_str)
-                        elbowXYZ[2] = float(ez_str)
+        except Exception as e:
+            logger.error(f"Connection error: {e}; exiting...")
+            break
 
-                        # Push the pose into the visualizer
-                        viz.update_body_pose(
-                            shoulder_xyz_deg=shoulderXYZ,
-                            elbow_xyz_deg=elbowXYZ,
-                        )
+    logger.info("Disconnected from server")
 
-                        print(
-                            f"[visualizer] t={t:.3f}, "
-                            f"shoulder={shoulderXYZ}, "
-                            f"elbow={elbowXYZ}"
-                        )
-                    except ValueError:
-                        # Fallback if the line isn't in the expected format
-                        print(f"[visualizer] raw: {line}")
-            except KeyboardInterrupt:
-                print("[visualizer] Interrupted by user; closing connection")
 
-    print("[visualizer] Disconnected from server")
-
-threading.Thread(target=main, daemon=True).start()
-viz.run()  # blocks; window stays responsive while updates arrive
+if __name__ == "__main__":
+    threading.Thread(target=main, daemon=True).start()
+    viz.run()
